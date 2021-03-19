@@ -309,17 +309,17 @@ class TIVCollection(TIV):
 
 
         self.tivlist = tivlist  # Nested list of TIV sequences
+        self.weights = tivlist[0][0].weights
         self.energies = np.array([ [i.energy for i in innertivlist] for innertivlist in tivlist] )
         self.vectors =  np.array([ [i.vector for i in innertivlist] for innertivlist in tivlist] )
+        S, N = self.energies.shape[0], self.energies.shape[1]
+        self.shape = (S, N)
 
     def __getitem__(self, item):
         return self.tivlist[item]
 
     def __repr__(self):
-        return "TIVCollection (%s tivs)" % len(self.tivlist)
-
-    def __str__(self):
-        return self.tivlist
+        return f"TIVCollection ({S} sequences of {N} TIVs)"
 
     @classmethod
     def from_pcp(cls, pcp):
@@ -375,12 +375,22 @@ class TIVCollection(TIV):
         :param tivcol2: TIVCollections to compare
         :return: sum of the small scale harmonic compatibilities of all TIVs in collections
         """
-        if len(tivcol2.tivlist) != len(self.tivlist):
+        if tivcol2.shape[1] != self.shape[1]:
             raise ValueError("Compatibility between different TIVCollections sizes are not supported yet")
-        h_comps = np.zeros(len(tivcol2.tivlist))
-        for idx in range(len(tivcol2.tivlist)):
-            h_comps[idx] = self.tivlist[idx].small_scale_compatibility(tivcol2[idx])
-        return np.sum(h_comps)
+        if self.shape[0] != 1:
+            raise ValueError("Query TIV can only have 1 sequence")
+        h_comps = np.zeros(tivcol2.shape[0])
+        
+        vectorq = self.vectors
+        vectorc = tivcol2.vectors
+
+        prelatedntess = np.linalg.norm(vectorq-vectorc, axis=2)
+        n_prelatedness = prelatedntess/(np.linalg.norm(self.weights)*2)
+        n_dissonance = 1 - ( np.linalg.norm(((vectorq + vectorc)), axis=2) / np.linalg.norm(self.weights) )
+
+        h_comps = n_prelatedness * n_dissonance
+
+        return h_comps
 
     def get_max_compatibility(self, tivcol2):
         """
