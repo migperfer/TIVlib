@@ -301,11 +301,16 @@ class TIVCollection(TIV):
         The constructor of the class. Takes a list of TIV vectors
         :param tivlist: A list containing all the tivs of an audio
         """
-        if not all([isinstance(tivi, TIV) for tivi in tivlist]):
+        if not all([isinstance(element, list) for element in tivlist]):
+            tivlist = [tivlist]
+
+        if not all([ [isinstance(tivi, TIV) for tivi in innertivlist] for innertivlist in tivlist] ):
             raise TypeError("Some element in the list is not a TIV object")
-        self.tivlist = tivlist
-        self.energies = np.array([i.energy for i in tivlist])
-        self.vectors = np.array([i.vector for i in tivlist])
+
+
+        self.tivlist = tivlist  # Nested list of TIV sequences
+        self.energies = np.array([ [i.energy for i in innertivlist] for innertivlist in tivlist] )
+        self.vectors =  np.array([ [i.vector for i in innertivlist] for innertivlist in tivlist] )
 
     def __getitem__(self, item):
         return self.tivlist[item]
@@ -320,18 +325,26 @@ class TIVCollection(TIV):
     def from_pcp(cls, pcp):
         """
         Get TIVs from pcp, as the original method
-        :param pcp: 12xN vector containing N pcps
+        :param pcp: 12xN or Sx12xN vector, containing S sequences of N pcps
         :return: TIVCollection object
         """
-        if pcp.shape[0] != 12:
+        if pcp.ndim == 2:       # One PCPs series        (12xN)
+            pcp = np.expand_dims(pcp, 0)
+        if pcp.ndim == 3:     # Multiple PCPs series   (Sx12xN)
+            if pcp.shape[1] != 12:
+                raise TypeError("Vector is not compatible with PCP")
+            fft = np.fft.rfft(pcp, n=12, axis=1)
+        else:
             raise TypeError("Vector is not compatible with PCP")
-        fft = np.fft.rfft(pcp, n=12, axis=0)
+
+        S, _, N = pcp.shape
+
         if fft.ndim == 1:
             fft = fft[:, np.newaxis]
-        energy = fft[0, :] + epsilon
-        vector = fft[1:7, :]
-        vector = ((vector / energy) * np.array(cls.weights)[:, np.newaxis])
-        return cls([TIV(energy[i], vector[:, i]) for i in range(len(energy))])
+        energy = fft[:, 0, :] + epsilon
+        vector = fft[:, 1:7, :]
+        vector = ((vector / energy[:, np.newaxis]) * np.array(cls.weights)[:, np.newaxis])
+        return cls( [[TIV(energy[s, n], vector[s, :, n]) for n in range(N) ] for s in range(S)] )
 
     def get_12_transposes(self):
         """
